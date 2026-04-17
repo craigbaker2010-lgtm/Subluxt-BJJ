@@ -13,6 +13,11 @@ declare module "express-session" {
 }
 
 export function registerRoutes(httpServer: Server, app: Express): void {
+  // Health check — Railway uses this to confirm the app is running
+  app.get("/health", (_req: Request, res: Response) => {
+    res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
   // Session middleware
   app.use(session({
     secret: process.env.SESSION_SECRET || "subluxt-bjj-secret-2026",

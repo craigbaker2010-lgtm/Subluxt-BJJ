@@ -5,7 +5,7 @@
   },
   "deploy": {
     "startCommand": "npm run build && NODE_ENV=production node dist/index.cjs",
-    "healthcheckPath": "/api/auth/me",
+    "healthcheckPath": "/health",
     "restartPolicyType": "ON_FAILURE"
   }
 }
