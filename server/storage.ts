@@ -1,6 +1,8 @@
 import { drizzle } from "drizzle-orm/libsql";
 import { createClient } from "@libsql/client";
 import { eq, and, gte, lte } from "drizzle-orm";
+import { mkdirSync } from "fs";
+import { dirname } from "path";
 import {
   users, trainingDays, techniqueDrills, sessionLogs, subscriptions,
   merchProducts, merchOrders,
@@ -15,6 +17,9 @@ import {
 import bcrypt from "bcryptjs";
 
 const DB_PATH = process.env.DATABASE_PATH || "subluxt.db";
+// Ensure the parent directory exists before opening (critical for Railway volume mounts)
+const dbDir = dirname(DB_PATH);
+if (dbDir && dbDir !== ".") mkdirSync(dbDir, { recursive: true });
 const client = createClient({ url: `file:${DB_PATH}` });
 const db = drizzle(client);
 
