@@ -27,19 +27,19 @@ export function registerRoutes(httpServer: Server, app: Express): void {
   }));
 
   // ─── Auth Routes ──────────────────────────────────────────────────────────────
-  app.post("/api/auth/register", (req: Request, res: Response) => {
+  app.post("/api/auth/register", async (req: Request, res: Response) => {
     try {
       const body = req.body;
       const { email, name, password } = body;
       if (!email || !name || !password) {
         return res.status(400).json({ error: "Email, name, and password are required" });
       }
-      const existing = storage.getUserByEmail(email);
+      const existing = await storage.getUserByEmail(email);
       if (existing) return res.status(409).json({ error: "Email already registered" });
 
-      const hashedPassword = bcrypt.hashSync(password, 10);
+      const hashedPassword = await bcrypt.hash(password, 10);
       const initials = name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
-      const user = storage.createUser({
+      const user = await storage.createUser({
         email, name, password: hashedPassword,
         belt: "white", stripes: 0,
         subscriptionStatus: "trial",
@@ -56,15 +56,15 @@ export function registerRoutes(httpServer: Server, app: Express): void {
     }
   });
 
-  app.post("/api/auth/login", (req: Request, res: Response) => {
+  app.post("/api/auth/login", async (req: Request, res: Response) => {
     try {
       const { email, password } = req.body;
       if (!email || !password) return res.status(400).json({ error: "Email and password required" });
 
-      const user = storage.getUserByEmail(email);
+      const user = await storage.getUserByEmail(email);
       if (!user) return res.status(401).json({ error: "Invalid email or password" });
 
-      const valid = bcrypt.compareSync(password, user.password);
+      const valid = await bcrypt.compare(password, user.password);
       if (!valid) return res.status(401).json({ error: "Invalid email or password" });
 
       req.session.userId = user.id;
@@ -79,42 +79,42 @@ export function registerRoutes(httpServer: Server, app: Express): void {
     req.session.destroy(() => res.json({ ok: true }));
   });
 
-  app.get("/api/auth/me", (req: Request, res: Response) => {
+  app.get("/api/auth/me", async (req: Request, res: Response) => {
     if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
-    const user = storage.getUserById(req.session.userId);
+    const user = await storage.getUserById(req.session.userId);
     if (!user) return res.status(401).json({ error: "User not found" });
     const { password: _, ...safeUser } = user;
     return res.json({ user: safeUser });
   });
 
   // ─── Training Days ────────────────────────────────────────────────────────────
-  app.get("/api/training-days", (req: Request, res: Response) => {
+  app.get("/api/training-days", async (req: Request, res: Response) => {
     const { year, month } = req.query;
     if (year && month) {
-      const days = storage.getTrainingDaysByMonth(Number(year), Number(month));
+      const days = await storage.getTrainingDaysByMonth(Number(year), Number(month));
       return res.json(days);
     }
-    return res.json(storage.getTrainingDays());
+    return res.json(await storage.getTrainingDays());
   });
 
-  app.get("/api/training-days/:id", (req: Request, res: Response) => {
-    const day = storage.getTrainingDayById(Number(req.params.id));
+  app.get("/api/training-days/:id", async (req: Request, res: Response) => {
+    const day = await storage.getTrainingDayById(Number(req.params.id));
     if (!day) return res.status(404).json({ error: "Training day not found" });
-    const drills = storage.getDrillsByTrainingDay(day.id);
+    const drills = await storage.getDrillsByTrainingDay(day.id);
     return res.json({ ...day, drills });
   });
 
   // ─── Session Logs ─────────────────────────────────────────────────────────────
-  app.get("/api/sessions", (req: Request, res: Response) => {
+  app.get("/api/sessions", async (req: Request, res: Response) => {
     if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
     const { from, to } = req.query;
     if (from && to) {
-      return res.json(storage.getSessionsByUserAndDate(req.session.userId, String(from), String(to)));
+      return res.json(await storage.getSessionsByUserAndDate(req.session.userId, String(from), String(to)));
     }
-    return res.json(storage.getSessionsByUser(req.session.userId));
+    return res.json(await storage.getSessionsByUser(req.session.userId));
   });
 
-  app.post("/api/sessions", (req: Request, res: Response) => {
+  app.post("/api/sessions", async (req: Request, res: Response) => {
     if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
     try {
       const data = {
@@ -122,27 +122,27 @@ export function registerRoutes(httpServer: Server, app: Express): void {
         userId: req.session.userId,
         completedDrills: JSON.stringify(req.body.completedDrills || []),
       };
-      const log = storage.createSessionLog(data);
+      const log = await storage.createSessionLog(data);
       return res.json(log);
     } catch (e: any) {
       return res.status(400).json({ error: e.message });
     }
   });
 
-  app.get("/api/stats", (req: Request, res: Response) => {
+  app.get("/api/stats", async (req: Request, res: Response) => {
     if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
-    const stats = storage.getUserStats(req.session.userId);
+    const stats = await storage.getUserStats(req.session.userId);
     return res.json(stats);
   });
 
   // ─── Subscriptions ────────────────────────────────────────────────────────────
-  app.get("/api/subscriptions", (req: Request, res: Response) => {
+  app.get("/api/subscriptions", async (req: Request, res: Response) => {
     if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
-    const subs = storage.getSubscriptionsByUser(req.session.userId);
+    const subs = await storage.getSubscriptionsByUser(req.session.userId);
     return res.json(subs);
   });
 
-  app.post("/api/subscriptions/checkout", (req: Request, res: Response) => {
+  app.post("/api/subscriptions/checkout", async (req: Request, res: Response) => {
     if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
     try {
       const { plan, cardNumber, cardExpiry, cardCvc, cardName } = req.body;
@@ -164,7 +164,7 @@ export function registerRoutes(httpServer: Server, app: Express): void {
       const lastFour = String(cardNumber).replace(/\s/g, "").slice(-4);
       const transactionId = `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
 
-      const sub = storage.createSubscription({
+      const sub = await storage.createSubscription({
         userId: req.session.userId,
         plan,
         status: "active",
@@ -178,7 +178,7 @@ export function registerRoutes(httpServer: Server, app: Express): void {
       });
 
       // Update user subscription status
-      storage.updateUserSubscription(req.session.userId, "active", plan, endDate);
+      await storage.updateUserSubscription(req.session.userId, "active", plan, endDate);
 
       return res.json({ subscription: sub, transactionId });
     } catch (e: any) {
@@ -187,25 +187,25 @@ export function registerRoutes(httpServer: Server, app: Express): void {
   });
 
   // ─── Merch Routes ──────────────────────────────────────────────────────────────
-  app.get("/api/merch/products", (_req: Request, res: Response) => {
-    const products = storage.getMerchProducts();
+  app.get("/api/merch/products", async (_req: Request, res: Response) => {
+    const products = await storage.getMerchProducts();
     return res.json(products);
   });
 
-  app.get("/api/merch/products/:id", (req: Request, res: Response) => {
-    const product = storage.getMerchProductById(Number(req.params.id));
+  app.get("/api/merch/products/:id", async (req: Request, res: Response) => {
+    const product = await storage.getMerchProductById(Number(req.params.id));
     if (!product) return res.status(404).json({ error: "Product not found" });
     return res.json(product);
   });
 
-  app.get("/api/merch/orders", (req: Request, res: Response) => {
+  app.get("/api/merch/orders", async (req: Request, res: Response) => {
     if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
-    return res.json(storage.getMerchOrdersByUser(req.session.userId));
+    return res.json(await storage.getMerchOrdersByUser(req.session.userId));
   });
 
   // Simulate Stripe checkout — creates order record, returns a fake session ID
   // In production: swap this for a real Stripe Checkout Session creation
-  app.post("/api/merch/checkout", (req: Request, res: Response) => {
+  app.post("/api/merch/checkout", async (req: Request, res: Response) => {
     if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
     try {
       const { items, cardNumber, cardExpiry, cardCvc, cardName } = req.body;
@@ -219,7 +219,7 @@ export function registerRoutes(httpServer: Server, app: Express): void {
       const total = items.reduce((sum: number, item: any) => sum + item.price * item.qty, 0);
       const fakeSessionId = `cs_test_${Date.now()}_${Math.random().toString(36).substr(2, 10)}`;
 
-      const order = storage.createMerchOrder({
+      const order = await storage.createMerchOrder({
         userId: req.session.userId,
         items: JSON.stringify(items),
         total: Math.round(total * 100) / 100,

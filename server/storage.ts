@@ -1,6 +1,6 @@
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import Database from "better-sqlite3";
-import { eq, and, gte, lte, desc, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/libsql";
+import { createClient } from "@libsql/client";
+import { eq, and, gte, lte } from "drizzle-orm";
 import {
   users, trainingDays, techniqueDrills, sessionLogs, subscriptions,
   merchProducts, merchOrders,
@@ -15,97 +15,99 @@ import {
 import bcrypt from "bcryptjs";
 
 const DB_PATH = process.env.DATABASE_PATH || "subluxt.db";
-const sqlite = new Database(DB_PATH);
-const db = drizzle(sqlite);
+const client = createClient({ url: `file:${DB_PATH}` });
+const db = drizzle(client);
 
 // ─── Migrations ───────────────────────────────────────────────────────────────
-sqlite.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT NOT NULL UNIQUE,
-    password TEXT NOT NULL,
-    name TEXT NOT NULL,
-    belt TEXT NOT NULL DEFAULT 'white',
-    stripes INTEGER NOT NULL DEFAULT 0,
-    subscription_status TEXT NOT NULL DEFAULT 'inactive',
-    subscription_plan TEXT,
-    subscription_expiry TEXT,
-    avatar_initials TEXT
-  );
+async function runMigrations() {
+  await client.executeMultiple(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT NOT NULL UNIQUE,
+      password TEXT NOT NULL,
+      name TEXT NOT NULL,
+      belt TEXT NOT NULL DEFAULT 'white',
+      stripes INTEGER NOT NULL DEFAULT 0,
+      subscription_status TEXT NOT NULL DEFAULT 'inactive',
+      subscription_plan TEXT,
+      subscription_expiry TEXT,
+      avatar_initials TEXT
+    );
 
-  CREATE TABLE IF NOT EXISTS training_days (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    date TEXT NOT NULL,
-    title TEXT NOT NULL,
-    description TEXT NOT NULL,
-    category TEXT NOT NULL,
-    difficulty_level TEXT NOT NULL DEFAULT 'all'
-  );
+    CREATE TABLE IF NOT EXISTS training_days (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      category TEXT NOT NULL,
+      difficulty_level TEXT NOT NULL DEFAULT 'all'
+    );
 
-  CREATE TABLE IF NOT EXISTS technique_drills (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    training_day_id INTEGER NOT NULL REFERENCES training_days(id),
-    order_index INTEGER NOT NULL DEFAULT 0,
-    part_label TEXT NOT NULL,
-    script TEXT NOT NULL,
-    video_url TEXT,
-    video_platform TEXT DEFAULT 'youtube',
-    duration_minutes INTEGER NOT NULL DEFAULT 10,
-    key_points TEXT NOT NULL DEFAULT '[]'
-  );
+    CREATE TABLE IF NOT EXISTS technique_drills (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      training_day_id INTEGER NOT NULL REFERENCES training_days(id),
+      order_index INTEGER NOT NULL DEFAULT 0,
+      part_label TEXT NOT NULL,
+      script TEXT NOT NULL,
+      video_url TEXT,
+      video_platform TEXT DEFAULT 'youtube',
+      duration_minutes INTEGER NOT NULL DEFAULT 10,
+      key_points TEXT NOT NULL DEFAULT '[]'
+    );
 
-  CREATE TABLE IF NOT EXISTS session_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    training_day_id INTEGER REFERENCES training_days(id),
-    date TEXT NOT NULL,
-    session_type TEXT NOT NULL DEFAULT 'class',
-    duration_minutes INTEGER NOT NULL DEFAULT 60,
-    notes TEXT,
-    rating INTEGER DEFAULT 3,
-    completed_drills TEXT NOT NULL DEFAULT '[]'
-  );
+    CREATE TABLE IF NOT EXISTS session_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      training_day_id INTEGER REFERENCES training_days(id),
+      date TEXT NOT NULL,
+      session_type TEXT NOT NULL DEFAULT 'class',
+      duration_minutes INTEGER NOT NULL DEFAULT 60,
+      notes TEXT,
+      rating INTEGER DEFAULT 3,
+      completed_drills TEXT NOT NULL DEFAULT '[]'
+    );
 
-  CREATE TABLE IF NOT EXISTS subscriptions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    plan TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending',
-    amount REAL NOT NULL,
-    currency TEXT NOT NULL DEFAULT 'USD',
-    start_date TEXT NOT NULL,
-    end_date TEXT NOT NULL,
-    payment_method TEXT DEFAULT 'card',
-    last_four TEXT,
-    transaction_id TEXT
-  );
+    CREATE TABLE IF NOT EXISTS subscriptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      plan TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      amount REAL NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'USD',
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      payment_method TEXT DEFAULT 'card',
+      last_four TEXT,
+      transaction_id TEXT
+    );
 
-  CREATE TABLE IF NOT EXISTS merch_products (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    description TEXT NOT NULL,
-    price REAL NOT NULL,
-    category TEXT NOT NULL,
-    sizes TEXT NOT NULL DEFAULT '[]',
-    image_url TEXT,
-    badge TEXT,
-    in_stock INTEGER NOT NULL DEFAULT 1
-  );
+    CREATE TABLE IF NOT EXISTS merch_products (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL,
+      price REAL NOT NULL,
+      category TEXT NOT NULL,
+      sizes TEXT NOT NULL DEFAULT '[]',
+      image_url TEXT,
+      badge TEXT,
+      in_stock INTEGER NOT NULL DEFAULT 1
+    );
 
-  CREATE TABLE IF NOT EXISTS merch_orders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    items TEXT NOT NULL,
-    total REAL NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending',
-    stripe_session_id TEXT,
-    created_at TEXT NOT NULL
-  );
-`);
+    CREATE TABLE IF NOT EXISTS merch_orders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      items TEXT NOT NULL,
+      total REAL NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      stripe_session_id TEXT,
+      created_at TEXT NOT NULL
+    );
+  `);
+}
 
 // Seed demo data if empty
-function seedDemoData() {
-  const existing = db.select().from(trainingDays).all();
+async function seedDemoData() {
+  const existing = await db.select().from(trainingDays).all();
   if (existing.length > 0) return;
 
   // Seed merch products
@@ -187,7 +189,7 @@ function seedDemoData() {
     },
   ];
   for (const p of products) {
-    db.insert(merchProducts).values(p).run();
+    await db.insert(merchProducts).values(p).run();
   }
 
   // Insert demo training days for April/May 2026
@@ -270,11 +272,11 @@ function seedDemoData() {
   ];
 
   for (const day of days) {
-    db.insert(trainingDays).values(day).run();
+    await db.insert(trainingDays).values(day).run();
   }
 
-  // Insert drills for training day 1 (Triangle Choke System) — April 16
-  const allDays = db.select().from(trainingDays).all();
+  // Insert drills for seeded training days
+  const allDays = await db.select().from(trainingDays).all();
   const triangleDay = allDays.find(d => d.date === "2026-04-16");
   const takedownDay = allDays.find(d => d.date === "2026-04-07");
   const guardDay = allDays.find(d => d.date === "2026-04-09");
@@ -378,7 +380,7 @@ function seedDemoData() {
       },
     ];
     for (const drill of drills) {
-      db.insert(techniqueDrills).values(drill).run();
+      await db.insert(techniqueDrills).values(drill).run();
     }
   }
 
@@ -414,7 +416,7 @@ function seedDemoData() {
       },
     ];
     for (const drill of drills) {
-      db.insert(techniqueDrills).values(drill).run();
+      await db.insert(techniqueDrills).values(drill).run();
     }
   }
 
@@ -450,13 +452,13 @@ function seedDemoData() {
       },
     ];
     for (const drill of drills) {
-      db.insert(techniqueDrills).values(drill).run();
+      await db.insert(techniqueDrills).values(drill).run();
     }
   }
 
   // Seed a demo user
-  const hashedPassword = bcrypt.hashSync("demo1234", 10);
-  db.insert(users).values({
+  const hashedPassword = await bcrypt.hash("demo1234", 10);
+  await db.insert(users).values({
     email: "demo@subluxt.com",
     password: hashedPassword,
     name: "Alex Rivera",
@@ -469,7 +471,8 @@ function seedDemoData() {
   }).run();
 
   // Seed some session logs for the demo user
-  const demoUser = db.select().from(users).where(eq(users.email, "demo@subluxt.com")).get();
+  const demoUserRows = await db.select().from(users).where(eq(users.email, "demo@subluxt.com")).all();
+  const demoUser = demoUserRows[0];
   if (demoUser) {
     const logData = [
       { userId: demoUser.id, date: "2026-04-07", sessionType: "class", durationMinutes: 75, rating: 4, notes: "Great double-leg session, need to work on the finish.", completedDrills: "[]" },
@@ -482,105 +485,115 @@ function seedDemoData() {
       { userId: demoUser.id, date: "2026-03-19", sessionType: "class", durationMinutes: 60, rating: 5, notes: "Triangles starting to feel natural.", completedDrills: "[]" },
     ];
     for (const log of logData) {
-      db.insert(sessionLogs).values(log).run();
+      await db.insert(sessionLogs).values(log).run();
     }
   }
 }
 
-seedDemoData();
+// Run migrations and seed on startup — exported so index.ts can await it
+export async function initDatabase() {
+  await runMigrations();
+  await seedDemoData();
+}
 
 // ─── Storage Interface ────────────────────────────────────────────────────────
 export interface IStorage {
   // Auth
-  getUserByEmail(email: string): User | undefined;
-  getUserById(id: number): User | undefined;
-  createUser(data: InsertUser): User;
-  updateUserSubscription(userId: number, status: string, plan: string | null, expiry: string | null): User | undefined;
+  getUserByEmail(email: string): Promise<User | undefined>;
+  getUserById(id: number): Promise<User | undefined>;
+  createUser(data: InsertUser): Promise<User>;
+  updateUserSubscription(userId: number, status: string, plan: string | null, expiry: string | null): Promise<User | undefined>;
 
   // Training Days
-  getTrainingDays(): TrainingDay[];
-  getTrainingDaysByMonth(year: number, month: number): TrainingDay[];
-  getTrainingDayById(id: number): TrainingDay | undefined;
+  getTrainingDays(): Promise<TrainingDay[]>;
+  getTrainingDaysByMonth(year: number, month: number): Promise<TrainingDay[]>;
+  getTrainingDayById(id: number): Promise<TrainingDay | undefined>;
 
   // Drills
-  getDrillsByTrainingDay(trainingDayId: number): TechniqueDrill[];
+  getDrillsByTrainingDay(trainingDayId: number): Promise<TechniqueDrill[]>;
 
   // Session Logs
-  getSessionsByUser(userId: number): SessionLog[];
-  getSessionsByUserAndDate(userId: number, from: string, to: string): SessionLog[];
-  createSessionLog(data: InsertSessionLog): SessionLog;
-  getUserStats(userId: number): { totalSessions: number; totalMinutes: number; avgRating: number; streak: number };
+  getSessionsByUser(userId: number): Promise<SessionLog[]>;
+  getSessionsByUserAndDate(userId: number, from: string, to: string): Promise<SessionLog[]>;
+  createSessionLog(data: InsertSessionLog): Promise<SessionLog>;
+  getUserStats(userId: number): Promise<{ totalSessions: number; totalMinutes: number; avgRating: number; streak: number }>;
 
   // Subscriptions
-  createSubscription(data: InsertSubscription): Subscription;
-  getSubscriptionsByUser(userId: number): Subscription[];
-  getActiveSubscription(userId: number): Subscription | undefined;
+  createSubscription(data: InsertSubscription): Promise<Subscription>;
+  getSubscriptionsByUser(userId: number): Promise<Subscription[]>;
+  getActiveSubscription(userId: number): Promise<Subscription | undefined>;
 
   // Merch
-  getMerchProducts(): MerchProduct[];
-  getMerchProductById(id: number): MerchProduct | undefined;
-  createMerchOrder(data: InsertMerchOrder): MerchOrder;
-  getMerchOrdersByUser(userId: number): MerchOrder[];
-  updateMerchOrderStatus(orderId: number, status: string, stripeSessionId?: string): MerchOrder | undefined;
+  getMerchProducts(): Promise<MerchProduct[]>;
+  getMerchProductById(id: number): Promise<MerchProduct | undefined>;
+  createMerchOrder(data: InsertMerchOrder): Promise<MerchOrder>;
+  getMerchOrdersByUser(userId: number): Promise<MerchOrder[]>;
+  updateMerchOrderStatus(orderId: number, status: string, stripeSessionId?: string): Promise<MerchOrder | undefined>;
 }
 
 export class DrizzleStorage implements IStorage {
-  getUserByEmail(email: string): User | undefined {
-    return db.select().from(users).where(eq(users.email, email)).get();
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const rows = await db.select().from(users).where(eq(users.email, email)).all();
+    return rows[0];
   }
 
-  getUserById(id: number): User | undefined {
-    return db.select().from(users).where(eq(users.id, id)).get();
+  async getUserById(id: number): Promise<User | undefined> {
+    const rows = await db.select().from(users).where(eq(users.id, id)).all();
+    return rows[0];
   }
 
-  createUser(data: InsertUser): User {
-    return db.insert(users).values(data).returning().get();
+  async createUser(data: InsertUser): Promise<User> {
+    const rows = await db.insert(users).values(data).returning().all();
+    return rows[0];
   }
 
-  updateUserSubscription(userId: number, status: string, plan: string | null, expiry: string | null): User | undefined {
-    return db.update(users)
+  async updateUserSubscription(userId: number, status: string, plan: string | null, expiry: string | null): Promise<User | undefined> {
+    const rows = await db.update(users)
       .set({ subscriptionStatus: status, subscriptionPlan: plan, subscriptionExpiry: expiry })
       .where(eq(users.id, userId))
-      .returning().get();
+      .returning().all();
+    return rows[0];
   }
 
-  getTrainingDays(): TrainingDay[] {
+  async getTrainingDays(): Promise<TrainingDay[]> {
     return db.select().from(trainingDays).all();
   }
 
-  getTrainingDaysByMonth(year: number, month: number): TrainingDay[] {
+  async getTrainingDaysByMonth(year: number, month: number): Promise<TrainingDay[]> {
     const start = `${year}-${String(month).padStart(2, "0")}-01`;
     const end = `${year}-${String(month).padStart(2, "0")}-31`;
     return db.select().from(trainingDays).where(and(gte(trainingDays.date, start), lte(trainingDays.date, end))).all();
   }
 
-  getTrainingDayById(id: number): TrainingDay | undefined {
-    return db.select().from(trainingDays).where(eq(trainingDays.id, id)).get();
+  async getTrainingDayById(id: number): Promise<TrainingDay | undefined> {
+    const rows = await db.select().from(trainingDays).where(eq(trainingDays.id, id)).all();
+    return rows[0];
   }
 
-  getDrillsByTrainingDay(trainingDayId: number): TechniqueDrill[] {
-    return db.select().from(techniqueDrills)
+  async getDrillsByTrainingDay(trainingDayId: number): Promise<TechniqueDrill[]> {
+    const rows = await db.select().from(techniqueDrills)
       .where(eq(techniqueDrills.trainingDayId, trainingDayId))
-      .all()
-      .sort((a, b) => a.orderIndex - b.orderIndex);
+      .all();
+    return rows.sort((a, b) => a.orderIndex - b.orderIndex);
   }
 
-  getSessionsByUser(userId: number): SessionLog[] {
+  async getSessionsByUser(userId: number): Promise<SessionLog[]> {
     return db.select().from(sessionLogs).where(eq(sessionLogs.userId, userId)).all();
   }
 
-  getSessionsByUserAndDate(userId: number, from: string, to: string): SessionLog[] {
+  async getSessionsByUserAndDate(userId: number, from: string, to: string): Promise<SessionLog[]> {
     return db.select().from(sessionLogs)
       .where(and(eq(sessionLogs.userId, userId), gte(sessionLogs.date, from), lte(sessionLogs.date, to)))
       .all();
   }
 
-  createSessionLog(data: InsertSessionLog): SessionLog {
-    return db.insert(sessionLogs).values(data).returning().get();
+  async createSessionLog(data: InsertSessionLog): Promise<SessionLog> {
+    const rows = await db.insert(sessionLogs).values(data).returning().all();
+    return rows[0];
   }
 
-  getUserStats(userId: number): { totalSessions: number; totalMinutes: number; avgRating: number; streak: number } {
-    const logs = db.select().from(sessionLogs).where(eq(sessionLogs.userId, userId)).all();
+  async getUserStats(userId: number): Promise<{ totalSessions: number; totalMinutes: number; avgRating: number; streak: number }> {
+    const logs = await db.select().from(sessionLogs).where(eq(sessionLogs.userId, userId)).all();
     const totalSessions = logs.length;
     const totalMinutes = logs.reduce((s, l) => s + (l.durationMinutes || 0), 0);
     const ratings = logs.filter(l => l.rating !== null).map(l => l.rating as number);
@@ -601,41 +614,46 @@ export class DrizzleStorage implements IStorage {
     return { totalSessions, totalMinutes, avgRating: Math.round(avgRating * 10) / 10, streak };
   }
 
-  createSubscription(data: InsertSubscription): Subscription {
-    return db.insert(subscriptions).values(data).returning().get();
+  async createSubscription(data: InsertSubscription): Promise<Subscription> {
+    const rows = await db.insert(subscriptions).values(data).returning().all();
+    return rows[0];
   }
 
-  getSubscriptionsByUser(userId: number): Subscription[] {
+  async getSubscriptionsByUser(userId: number): Promise<Subscription[]> {
     return db.select().from(subscriptions).where(eq(subscriptions.userId, userId)).all();
   }
 
-  getActiveSubscription(userId: number): Subscription | undefined {
-    return db.select().from(subscriptions)
+  async getActiveSubscription(userId: number): Promise<Subscription | undefined> {
+    const rows = await db.select().from(subscriptions)
       .where(and(eq(subscriptions.userId, userId), eq(subscriptions.status, "active")))
-      .get();
+      .all();
+    return rows[0];
   }
 
-  getMerchProducts(): MerchProduct[] {
+  async getMerchProducts(): Promise<MerchProduct[]> {
     return db.select().from(merchProducts).all();
   }
 
-  getMerchProductById(id: number): MerchProduct | undefined {
-    return db.select().from(merchProducts).where(eq(merchProducts.id, id)).get();
+  async getMerchProductById(id: number): Promise<MerchProduct | undefined> {
+    const rows = await db.select().from(merchProducts).where(eq(merchProducts.id, id)).all();
+    return rows[0];
   }
 
-  createMerchOrder(data: InsertMerchOrder): MerchOrder {
-    return db.insert(merchOrders).values(data).returning().get();
+  async createMerchOrder(data: InsertMerchOrder): Promise<MerchOrder> {
+    const rows = await db.insert(merchOrders).values(data).returning().all();
+    return rows[0];
   }
 
-  getMerchOrdersByUser(userId: number): MerchOrder[] {
+  async getMerchOrdersByUser(userId: number): Promise<MerchOrder[]> {
     return db.select().from(merchOrders).where(eq(merchOrders.userId, userId)).all();
   }
 
-  updateMerchOrderStatus(orderId: number, status: string, stripeSessionId?: string): MerchOrder | undefined {
-    return db.update(merchOrders)
+  async updateMerchOrderStatus(orderId: number, status: string, stripeSessionId?: string): Promise<MerchOrder | undefined> {
+    const rows = await db.update(merchOrders)
       .set({ status, ...(stripeSessionId ? { stripeSessionId } : {}) })
       .where(eq(merchOrders.id, orderId))
-      .returning().get();
+      .returning().all();
+    return rows[0];
   }
 }
 
