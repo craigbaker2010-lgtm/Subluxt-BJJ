@@ -503,6 +503,17 @@ export async function initDatabase() {
 
 // ─── Storage Interface ────────────────────────────────────────────────────────
 export interface IStorage {
+  // Admin
+  getAllUsers(): Promise<User[]>;
+  updateUserBelt(userId: number, belt: string, stripes: number): Promise<User | undefined>;
+  createTrainingDay(data: InsertTrainingDay): Promise<TrainingDay>;
+  updateTrainingDay(id: number, data: Partial<InsertTrainingDay>): Promise<TrainingDay | undefined>;
+  deleteTrainingDay(id: number): Promise<void>;
+  createDrill(data: InsertTechniqueDrill): Promise<TechniqueDrill>;
+  updateDrill(id: number, data: Partial<InsertTechniqueDrill>): Promise<TechniqueDrill | undefined>;
+  deleteDrill(id: number): Promise<void>;
+
+  // Auth (existing)
   // Auth
   getUserByEmail(email: string): Promise<User | undefined>;
   getUserById(id: number): Promise<User | undefined>;
@@ -550,6 +561,48 @@ export class DrizzleStorage implements IStorage {
   async createUser(data: InsertUser): Promise<User> {
     const rows = await db.insert(users).values(data).returning().all();
     return rows[0];
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    return db.select().from(users).all();
+  }
+
+  async updateUserBelt(userId: number, belt: string, stripes: number): Promise<User | undefined> {
+    const rows = await db.update(users)
+      .set({ belt, stripes })
+      .where(eq(users.id, userId))
+      .returning().all();
+    return rows[0];
+  }
+
+  async createTrainingDay(data: InsertTrainingDay): Promise<TrainingDay> {
+    const rows = await db.insert(trainingDays).values(data).returning().all();
+    return rows[0];
+  }
+
+  async updateTrainingDay(id: number, data: Partial<InsertTrainingDay>): Promise<TrainingDay | undefined> {
+    const rows = await db.update(trainingDays).set(data).where(eq(trainingDays.id, id)).returning().all();
+    return rows[0];
+  }
+
+  async deleteTrainingDay(id: number): Promise<void> {
+    // Delete drills first (FK constraint)
+    await db.delete(techniqueDrills).where(eq(techniqueDrills.trainingDayId, id)).run();
+    await db.delete(trainingDays).where(eq(trainingDays.id, id)).run();
+  }
+
+  async createDrill(data: InsertTechniqueDrill): Promise<TechniqueDrill> {
+    const rows = await db.insert(techniqueDrills).values(data).returning().all();
+    return rows[0];
+  }
+
+  async updateDrill(id: number, data: Partial<InsertTechniqueDrill>): Promise<TechniqueDrill | undefined> {
+    const rows = await db.update(techniqueDrills).set(data).where(eq(techniqueDrills.id, id)).returning().all();
+    return rows[0];
+  }
+
+  async deleteDrill(id: number): Promise<void> {
+    await db.delete(techniqueDrills).where(eq(techniqueDrills.id, id)).run();
   }
 
   async updateUserSubscription(userId: number, status: string, plan: string | null, expiry: string | null): Promise<User | undefined> {

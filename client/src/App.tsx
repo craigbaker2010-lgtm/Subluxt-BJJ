@@ -11,6 +11,7 @@ import TrainingDayPage from "@/pages/TrainingDay";
 import ProgressPage from "@/pages/Progress";
 import SubscriptionPage from "@/pages/Subscription";
 import ShopPage from "@/pages/Shop";
+import AdminPage from "@/pages/Admin";
 import NotFound from "@/pages/not-found";
 import { AuthProvider } from "@/lib/auth";
 
@@ -28,6 +29,7 @@ export default function App() {
             <Route path="/progress" component={ProgressPage} />
             <Route path="/subscription" component={SubscriptionPage} />
             <Route path="/shop" component={ShopPage} />
+            <Route path="/admin" component={AdminPage} />
             <Route component={NotFound} />
           </Switch>
         </Router>

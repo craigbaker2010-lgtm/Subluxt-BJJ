@@ -186,6 +186,90 @@ export function registerRoutes(httpServer: Server, app: Express): void {
     }
   });
 
+  // ─── Admin Auth ──────────────────────────────────────────────────────────────
+  const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "subluxt-admin-2026";
+
+  app.post("/api/admin/login", (req: Request, res: Response) => {
+    const { password } = req.body;
+    if (password === ADMIN_PASSWORD) {
+      (req.session as any).isAdmin = true;
+      return res.json({ ok: true });
+    }
+    return res.status(401).json({ error: "Invalid admin password" });
+  });
+
+  app.post("/api/admin/logout", (req: Request, res: Response) => {
+    (req.session as any).isAdmin = false;
+    res.json({ ok: true });
+  });
+
+  app.get("/api/admin/check", (req: Request, res: Response) => {
+    res.json({ isAdmin: !!(req.session as any).isAdmin });
+  });
+
+  // ─── Admin: Training Days CRUD ────────────────────────────────────────────────
+  app.post("/api/admin/training-days", async (req: Request, res: Response) => {
+    if (!(req.session as any).isAdmin) return res.status(403).json({ error: "Forbidden" });
+    try {
+      const day = await storage.createTrainingDay(req.body);
+      return res.json(day);
+    } catch (e: any) { return res.status(400).json({ error: e.message }); }
+  });
+
+  app.put("/api/admin/training-days/:id", async (req: Request, res: Response) => {
+    if (!(req.session as any).isAdmin) return res.status(403).json({ error: "Forbidden" });
+    try {
+      const day = await storage.updateTrainingDay(Number(req.params.id), req.body);
+      return res.json(day);
+    } catch (e: any) { return res.status(400).json({ error: e.message }); }
+  });
+
+  app.delete("/api/admin/training-days/:id", async (req: Request, res: Response) => {
+    if (!(req.session as any).isAdmin) return res.status(403).json({ error: "Forbidden" });
+    await storage.deleteTrainingDay(Number(req.params.id));
+    return res.json({ ok: true });
+  });
+
+  // ─── Admin: Drills CRUD ───────────────────────────────────────────────────────
+  app.post("/api/admin/drills", async (req: Request, res: Response) => {
+    if (!(req.session as any).isAdmin) return res.status(403).json({ error: "Forbidden" });
+    try {
+      const drill = await storage.createDrill(req.body);
+      return res.json(drill);
+    } catch (e: any) { return res.status(400).json({ error: e.message }); }
+  });
+
+  app.put("/api/admin/drills/:id", async (req: Request, res: Response) => {
+    if (!(req.session as any).isAdmin) return res.status(403).json({ error: "Forbidden" });
+    try {
+      const drill = await storage.updateDrill(Number(req.params.id), req.body);
+      return res.json(drill);
+    } catch (e: any) { return res.status(400).json({ error: e.message }); }
+  });
+
+  app.delete("/api/admin/drills/:id", async (req: Request, res: Response) => {
+    if (!(req.session as any).isAdmin) return res.status(403).json({ error: "Forbidden" });
+    await storage.deleteDrill(Number(req.params.id));
+    return res.json({ ok: true });
+  });
+
+  // ─── Admin: Students list ─────────────────────────────────────────────────────
+  app.get("/api/admin/students", async (req: Request, res: Response) => {
+    if (!(req.session as any).isAdmin) return res.status(403).json({ error: "Forbidden" });
+    const allUsers = await storage.getAllUsers();
+    return res.json(allUsers.map(({ password: _, ...u }) => u));
+  });
+
+  app.put("/api/admin/students/:id", async (req: Request, res: Response) => {
+    if (!(req.session as any).isAdmin) return res.status(403).json({ error: "Forbidden" });
+    try {
+      const user = await storage.updateUserBelt(Number(req.params.id), req.body.belt, req.body.stripes);
+      if (!user) return res.status(404).json({ error: "User not found" });
+      const { password: _, ...safeUser } = user;
+      return res.json(safeUser);
+    } catch (e: any) { return res.status(400).json({ error: e.message }); }
+  });
+
   // ─── Merch Routes ──────────────────────────────────────────────────────────────
   app.get("/api/merch/products", async (_req: Request, res: Response) => {
     const products = await storage.getMerchProducts();
