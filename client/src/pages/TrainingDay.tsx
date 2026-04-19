@@ -28,6 +28,24 @@ const CATEGORY_CLASSES: Record<string, string> = {
   sparring: "category-sparring",
 };
 
+// Convert any YouTube URL format to an embeddable URL
+function toYouTubeEmbed(url: string): string {
+  if (!url) return url;
+  // Already an embed URL
+  if (url.includes("youtube.com/embed/") || url.includes("youtube.com/v/")) return url;
+  // youtu.be/VIDEO_ID
+  const shortMatch = url.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/);
+  if (shortMatch) return `https://www.youtube.com/embed/${shortMatch[1]}`;
+  // youtube.com/watch?v=VIDEO_ID
+  const watchMatch = url.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+  if (watchMatch) return `https://www.youtube.com/embed/${watchMatch[1]}`;
+  // youtube.com/shorts/VIDEO_ID
+  const shortsMatch = url.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/);
+  if (shortsMatch) return `https://www.youtube.com/embed/${shortsMatch[1]}`;
+  // Return as-is (Vimeo, etc.)
+  return url;
+}
+
 function DrillScript({ text }: { text: string }) {
   // Simple markdown-like renderer
   const lines = text.split("\n");
@@ -286,7 +304,7 @@ export default function TrainingDayPage() {
                             </div>
                             <div className="video-embed shadow-md border border-border">
                               <iframe
-                                src={drill.videoUrl}
+                                src={toYouTubeEmbed(drill.videoUrl)}
                                 title={drill.partLabel}
                                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                                 allowFullScreen

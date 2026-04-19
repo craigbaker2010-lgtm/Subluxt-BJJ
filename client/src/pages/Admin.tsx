@@ -1,5 +1,18 @@
 import { useState, useEffect } from "react";
 
+// Convert any YouTube URL to embed format
+function toYouTubeEmbed(url: string): string {
+  if (!url) return url;
+  if (url.includes("youtube.com/embed/")) return url;
+  const shortMatch = url.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/);
+  if (shortMatch) return `https://www.youtube.com/embed/${shortMatch[1]}`;
+  const watchMatch = url.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+  if (watchMatch) return `https://www.youtube.com/embed/${watchMatch[1]}`;
+  const shortsMatch = url.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/);
+  if (shortsMatch) return `https://www.youtube.com/embed/${shortsMatch[1]}`;
+  return url;
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface TrainingDay {
   id: number;
